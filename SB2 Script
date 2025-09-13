@@ -1,0 +1,271 @@
+-- GUI für Teeth-Farm
+local player = game.Players.LocalPlayer
+local runService = game:GetService("RunService")
+local virtualInputManager = game:GetService("VirtualInputManager")
+
+-- Entfernen des Oxygen HUDs, wenn es vorhanden ist
+local oxygenHUD = player:FindFirstChild("PlayerScripts") and player.PlayerScripts:FindFirstChild("HUD") and player.PlayerScripts.HUD:FindFirstChild("Oxygen")
+if oxygenHUD then
+    oxygenHUD:Destroy()
+    print("Oxygen HUD entfernt.")
+end
+
+-- Entfernen des AFK-Skripts, wenn es vorhanden ist
+local afkScript = player:FindFirstChild("PlayerScripts") and player.PlayerScripts:FindFirstChild("AFK")
+if afkScript then
+    afkScript:Destroy()
+    print("AFK-Skript entfernt.")
+end
+
+-- GUI erstellen
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "Farm Menu"
+screenGui.Parent = player:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+local menuFrame = Instance.new("Frame")
+menuFrame.Size = UDim2.new(0, 300, 0, 200)
+menuFrame.Position = UDim2.new(1, -310, 0.5, -100)
+menuFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+menuFrame.BorderSizePixel = 2
+menuFrame.Active = true
+menuFrame.Draggable = true
+menuFrame.Parent = screenGui
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(0, 280, 0, 30)
+titleLabel.Position = UDim2.new(0, 10, 0, 10)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "SB2 Farm by Slappy"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.Font = Enum.Font.SourceSansBold
+titleLabel.TextSize = 24
+titleLabel.Parent = menuFrame
+
+local teethFarmButton = Instance.new("TextButton")
+teethFarmButton.Size = UDim2.new(0, 200, 0, 40)
+teethFarmButton.Position = UDim2.new(0, 50, 0, 60)
+teethFarmButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
+teethFarmButton.Text = "Teeth-Farm: Off"
+teethFarmButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+teethFarmButton.Font = Enum.Font.SourceSans
+teethFarmButton.TextSize = 20
+teethFarmButton.Parent = menuFrame
+
+local weaponLabel = Instance.new("TextButton")
+weaponLabel.Size = UDim2.new(0, 200, 0, 40)
+weaponLabel.Position = UDim2.new(0, 50, 0, 110)
+weaponLabel.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+weaponLabel.Text = "Weapon: Flintlock"
+weaponLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+weaponLabel.Font = Enum.Font.SourceSans
+weaponLabel.TextSize = 20
+weaponLabel.Parent = menuFrame
+
+local isFarming = false
+local clickCount = 0 -- Zähler für Klicks
+local selectedWeapon = "Flintlock" -- Standardwaffe
+local isReloading = false -- Variable, um zu prüfen, ob nachgeladen wird
+
+-- Funktion, um die Waffe auszurüsten
+local function equipWeapon(weapon)
+    if weapon.Parent ~= player.Character then
+        player.Character.Humanoid:EquipTool(weapon)
+        print("Waffe ausgerüstet:", weapon.Name)
+    end
+end
+
+-- Funktion zum Überprüfen des Inventars und Ausrüsten der Waffe
+local function checkAndEquipWeapon()
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") and item.Name == selectedWeapon and item.Parent ~= player.Character then
+                equipWeapon(item)
+                return item -- Waffe gefunden und ausgerüstet
+            end
+        end
+    end
+
+    -- Überprüfen, ob die Waffe bereits im Charakter ausgerüstet ist
+    for _, item in ipairs(player.Character:GetChildren()) do
+        if item:IsA("Tool") and item.Name == selectedWeapon then
+            return item -- Waffe im Charakter gefunden
+        end
+    end
+
+    return nil -- Keine Waffe gefunden
+end
+
+-- Funktion zum Schießen
+local function shootWeapon(camera)
+    if isReloading then
+        print("Waffe ist am Nachladen. Bitte warten...")
+        return -- Verhindere das Schießen während des Nachladens
+    end
+
+    virtualInputManager:SendMouseButtonEvent(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2, 0, true, game, 1)
+    task.wait(0.1)
+    virtualInputManager:SendMouseButtonEvent(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2, 0, false, game, 1)
+end
+
+-- Funktion zum Nachladen
+local function reloadWeapon()
+    if isReloading then
+        return -- Verhindere, dass die Reload-Funktion erneut aufgerufen wird, wenn bereits nachgeladen wird
+    end
+    
+    print("Nachladen...")
+    isReloading = true -- Setze die Sperre, um zu verhindern, dass während des Nachladens geschossen wird
+    virtualInputManager:SendKeyEvent(true, "R", false, game) -- "R" drücken
+    task.wait(0.1)
+    virtualInputManager:SendKeyEvent(false, "R", false, game) -- "R" loslassen
+    task.wait(2) -- 2 Sekunden warten, während nachgeladen wird
+    isReloading = false -- Nach 2 Sekunden ist das Nachladen abgeschlossen, Sperre wird aufgehoben
+end
+
+-- Funktion, um sicherzustellen, dass der Spieler bei Bedarf aufsteht
+local function ensureStanding()
+    local humanoid = player.Character and player.Character:FindFirstChild("Humanoid")
+    if humanoid and humanoid.Sit then
+        humanoid.Sit = false -- Wenn der Spieler sitzt, stehe auf
+        task.wait(0.2) -- Warte eine kurze Zeit
+        humanoid:Move(Vector3.new(0, 10, 0)) -- Simuliere einen Sprung
+    end
+end
+
+-- Funktion zum kontinuierlichen Verfolgen und Angreifen der Haie
+local function followAndAttackSharks()
+    local sharkFolder = workspace:FindFirstChild("Sharks")
+    if not sharkFolder then
+        warn("Kein Sharks-Ordner gefunden!")
+        return
+    end
+
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    local camera = workspace.CurrentCamera
+
+    while isFarming do
+        ensureStanding() -- Überprüfe, ob der Spieler sitzt und stehe auf
+
+        local shark = sharkFolder:FindFirstChildOfClass("Model")
+        if not shark then
+            print("Keine Haie mehr im Sharks-Ordner gefunden!")
+            task.wait(1)
+            continue
+        end
+
+        local sharkRoot = shark:FindFirstChild("HumanoidRootPart") or shark.PrimaryPart or shark:FindFirstChildOfClass("BasePart")
+        if not sharkRoot then
+            warn("Kein gültiger Part für den Hai gefunden!")
+            task.wait(1)
+            continue
+        end
+
+        -- Spieler folgt dem Hai dynamisch
+        local followConnection
+        followConnection = runService.RenderStepped:Connect(function()
+            if isFarming and shark.Parent then
+                local offset = CFrame.new(0, 0, 140)
+                humanoidRootPart.CFrame = humanoidRootPart.CFrame:Lerp(sharkRoot.CFrame * offset, 0.1)
+                camera.CFrame = CFrame.new(camera.CFrame.Position, sharkRoot.Position)
+            else
+                followConnection:Disconnect()
+            end
+        end)
+
+        -- Angreifen des Hais
+        while isFarming and shark.Parent do
+            local weapon = checkAndEquipWeapon() -- Überprüfe und rüste Waffe aus
+            if not weapon then
+                print("Keine Waffe im Inventar gefunden! Warten...")
+                task.wait(2)
+                break
+            end
+
+            -- Prüfen, ob die Waffe korrekt ausgerüstet ist
+            if weapon.Parent == player.Character then
+                -- Schießen
+                shootWeapon(camera)
+
+                clickCount = clickCount + 1 -- Zähler erhöhen
+
+                -- Nachlade-Logik basierend auf ausgewählter Waffe
+                local maxClicks = selectedWeapon == "Flintlock" and 10 or selectedWeapon == "Harpoon" and 7 or selectedWeapon == "RocketLauncher" and 5 or 25
+                if clickCount >= maxClicks then
+                    reloadWeapon()
+                    clickCount = 0
+                end
+
+                -- Wartezeit zwischen den Schüssen basierend auf der gewählten Waffe
+                if selectedWeapon == "Flintlock" then
+                    task.wait(0.4)
+                elseif selectedWeapon == "Harpoon" then
+                    task.wait(0.5)
+                elseif selectedWeapon == "RocketLauncher" then  
+                    task.wait(1.3)  
+                elseif selectedWeapon == "SharkBlaster" then
+                    task.wait(0.01)
+                end
+            else
+                print("Waffe ist nicht korrekt ausgerüstet. Versuche, sie erneut auszurüsten.")
+                equipWeapon(weapon)
+            end
+        end
+
+        task.wait(1) -- Warten, bevor nach einem neuen Hai gesucht wird
+    end
+end
+
+-- Haupt-Schleife für den gesamten Prozess
+local function farmingLoop()
+    while isFarming do
+        checkAndEquipWeapon() -- Waffe überprüfen und ausrüsten
+        followAndAttackSharks()
+    end
+end
+
+-- Anti-AFK Funktion
+local function antiAFK()
+    while true do
+        -- Simuliere eine Mausbewegung
+        virtualInputManager:SendMouseMoveEvent(1, 1, 0, 0, game)
+        task.wait(30) -- Alle 30 Sekunden eine kleine Bewegung simulieren
+    end
+end
+
+-- Button-Funktionalität für Teeth-Farming
+teethFarmButton.MouseButton1Click:Connect(function()
+    isFarming = not isFarming
+    if isFarming then
+        teethFarmButton.Text = "Teeth-Farm: On"
+        spawn(farmingLoop) -- Starte Farming in einem separaten Thread
+        spawn(antiAFK) -- Starte den Anti-AFK Mechanismus
+    else
+        teethFarmButton.Text = "Teeth-Farm: Off"
+        clickCount = 0
+    end
+end)
+
+-- Button-Funktionalität für Waffenwechsel
+weaponLabel.MouseButton1Click:Connect(function()
+    if selectedWeapon == "Flintlock" then
+        selectedWeapon = "Harpoon"
+    elseif selectedWeapon == "Harpoon" then
+        selectedWeapon = "RocketLauncher"
+    elseif selectedWeapon == "RocketLauncher" then
+        selectedWeapon = "SharkBlaster"
+    else
+        selectedWeapon = "Flintlock"
+    end
+    weaponLabel.Text = "Weapon: " .. selectedWeapon
+    print("Gewählte Waffe:", selectedWeapon)
+end)
+
+-- Button-Funktionalität für das Nachladen (R-Taste)
+player.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.R then
+        reloadWeapon() -- Wenn die R-Taste gedrückt wird, lade die Waffe nach
+    end
+end)
