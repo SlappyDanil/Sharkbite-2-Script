@@ -21,7 +21,7 @@ end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "Farm Menu"
 screenGui.Parent = player:WaitForChild("PlayerGui")
-ScreenGui.ResetOnSpawn = false
+screenGui.ResetOnSpawn = false
 
 local menuFrame = Instance.new("Frame")
 menuFrame.Size = UDim2.new(0, 300, 0, 200)
